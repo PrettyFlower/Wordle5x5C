@@ -104,6 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>-fsanitize=undefined %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,12 +130,6 @@
   <ItemGroup>
     <ClCompile Include="allocation_block.c" />
     <ClCompile Include="allocator.c" />
-    <ClCompile Include="fast\525.c" />
-    <ClCompile Include="fast\a25.c" />
-    <ClCompile Include="fast\combos.c" />
-    <ClCompile Include="fast\hash_analysis.c" />
-    <ClCompile Include="fast\s25.c" />
-    <ClCompile Include="fast\v25.c" />
     <ClCompile Include="int_hashset.c" />
     <ClCompile Include="main.c" />
     <ClCompile Include="prime_utils.c" />
@@ -142,7 +137,6 @@
   <ItemGroup>
     <ClInclude Include="allocation_block.h" />
     <ClInclude Include="allocator.h" />
-    <ClInclude Include="fast\utilities.h" />
     <ClInclude Include="int_hashset.h" />
     <ClInclude Include="prime_utils.h" />
   </ItemGroup>

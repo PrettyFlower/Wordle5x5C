@@ -31,6 +31,11 @@ static void setup()
 	{
 		frequency_alphabet_bits[i] = 1 << (FREQUENCY_ALPHABET[i] - 97);
 	}
+	memset(word_text, 0, sizeof(word_text));
+	memset(word_bits, 0, sizeof(word_bits));
+	memset(word_counts, 0, sizeof(word_counts));
+	memset(solutions, 0, sizeof(solutions));
+	solution_count = 0;
 }
 
 static uint32_t get_submask(int i)
@@ -148,32 +153,43 @@ static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_id
 	}
 }
 
-static void solve()
+static void solve(int iteration)
 {
 	clock_t start = clock();
 	word_ptr words_so_far[5];
 	memset(words_so_far, 0, sizeof(words_so_far));
 	solve_recursive(0, words_so_far, 0, 0, 0);
 	FILE *output;
-	fopen_s(&output, "C:/code/Wordle5x5/Wordle5x5/results.txt", "wb");
+	char output_file_name[100];
+	sprintf_s(output_file_name, sizeof(output_file_name), "C:/code/Wordle5x5/Wordle5x5/results_%d.txt", iteration);
+	errno_t err = fopen_s(&output, output_file_name, "wb");
+	if (err != 0) {
+		printf("Error opening file for writing: %d, %ld\n", err, _doserrno);
+		return;
+	}
 	for (int i = 0; i < solution_count; i++) {
 		for (int j = 0; j < WORD_LEN; j++) {
-			fwrite(&solutions[i * WORD_LEN * WORD_LEN + j * WORD_LEN], WORD_LEN, 1, output);
+			int solution_idx = i * WORD_LEN * WORD_LEN + j * WORD_LEN;
+			if (solution_idx > 1000 * WORD_LEN * WORD_LEN) {
+				printf("Attempting to write solution_idx of %d\n", solution_idx);
+				return;
+			}
+			fwrite(&solutions[solution_idx], WORD_LEN, 1, output);
 			fwrite(" ", 1, 1, output);
 		}
 		fwrite("\n", 1, 1, output);
 	}
 	fclose(output);
-	memset(solutions, 0, sizeof(solutions));
-	solution_count = 0;
 	clock_t elapsed = clock() - start;
 	printf("Solve time: %ld\n", elapsed);
 }
 
 int main()
 {
-	setup();
-	read_file();
-	solve();
+	for (int i = 0; i < 10; i++) {
+		setup();
+		read_file();
+		solve(i);
+	}
 	return 0;
 }

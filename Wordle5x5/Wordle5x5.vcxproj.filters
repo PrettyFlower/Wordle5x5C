@@ -13,31 +13,10 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Source Files\fast">
-      <UniqueIdentifier>{63a0965b-86c8-4460-b751-c9a8db7e2034}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.c">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="fast\525.c">
-      <Filter>Source Files\fast</Filter>
-    </ClCompile>
-    <ClCompile Include="fast\a25.c">
-      <Filter>Source Files\fast</Filter>
-    </ClCompile>
-    <ClCompile Include="fast\combos.c">
-      <Filter>Source Files\fast</Filter>
-    </ClCompile>
-    <ClCompile Include="fast\hash_analysis.c">
-      <Filter>Source Files\fast</Filter>
-    </ClCompile>
-    <ClCompile Include="fast\s25.c">
-      <Filter>Source Files\fast</Filter>
-    </ClCompile>
-    <ClCompile Include="fast\v25.c">
-      <Filter>Source Files\fast</Filter>
     </ClCompile>
     <ClCompile Include="int_hashset.c">
       <Filter>Source Files</Filter>
@@ -53,9 +32,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="fast\utilities.h">
-      <Filter>Source Files\fast</Filter>
-    </ClInclude>
     <ClInclude Include="int_hashset.h">
       <Filter>Source Files</Filter>
     </ClInclude>
