@@ -170,10 +170,6 @@ static void solve(int iteration)
 	for (int i = 0; i < solution_count; i++) {
 		for (int j = 0; j < WORD_LEN; j++) {
 			int solution_idx = i * WORD_LEN * WORD_LEN + j * WORD_LEN;
-			if (solution_idx > 1000 * WORD_LEN * WORD_LEN) {
-				printf("Attempting to write solution_idx of %d\n", solution_idx);
-				return;
-			}
 			fwrite(&solutions[solution_idx], WORD_LEN, 1, output);
 			fwrite(" ", 1, 1, output);
 		}
