@@ -9,21 +9,22 @@
 
 #define BUFFER_SIZE 4300000
 #define SUBMASK_BUCKETS 6
+#define MAX_NUM_WORDS 5
 #define WORD_LEN 5
+
+typedef struct {
+	uint32_t idx;
+	uint32_t bits;
+} word_info;
 
 static const char FREQUENCY_ALPHABET[26] = "qxjzvfwbkgpmhdcytlnuroisea";
 static uint32_t frequency_alphabet_bits[26];
-static char word_text[26][SUBMASK_BUCKETS][500 * WORD_LEN];
-static uint32_t word_bits[26][SUBMASK_BUCKETS][500];
-static int word_counts[26][SUBMASK_BUCKETS];
-static char solutions[1000 * WORD_LEN * WORD_LEN];
+static char word_text[6000 * WORD_LEN];
+static int word_count;
+static word_info letter_index[26][SUBMASK_BUCKETS][500];
+static int index_counts[26][SUBMASK_BUCKETS];
+static uint32_t solutions[1000 * MAX_NUM_WORDS];
 static int solution_count;
-
-typedef struct {
-	int letter;
-	int submask_bucket;
-	int idx;
-} word_ptr;
 
 static void setup()
 {
@@ -32,8 +33,9 @@ static void setup()
 		frequency_alphabet_bits[i] = 1 << (FREQUENCY_ALPHABET[i] - 97);
 	}
 	memset(word_text, 0, sizeof(word_text));
-	memset(word_bits, 0, sizeof(word_bits));
-	memset(word_counts, 0, sizeof(word_counts));
+	word_count = 0;
+	memset(letter_index, 0, sizeof(letter_index));
+	memset(index_counts, 0, sizeof(index_counts));
 	memset(solutions, 0, sizeof(solutions));
 	solution_count = 0;
 }
@@ -98,10 +100,13 @@ static void read_file()
 		for (int i = 0; i < SUBMASK_BUCKETS; i++) {
 			uint32_t submask = get_submask(i);
 			if (i == SUBMASK_BUCKETS - 1 || (bits & submask) > 0) {
-				int num_words = word_counts[best_letter][i];
-				memcpy(&word_text[best_letter][i][num_words * WORD_LEN], buffer, 5);
-				word_bits[best_letter][i][num_words] = bits;
-				word_counts[best_letter][i] = num_words + 1;
+				memcpy(&word_text[word_count * WORD_LEN], buffer, WORD_LEN);
+				int *index_count = &index_counts[best_letter][i];
+				word_info *wi = &letter_index[best_letter][i][*index_count];
+				wi->bits = bits;
+				wi->idx = word_count;
+				*index_count = *index_count + 1;
+				word_count++;
 				break;
 			}
 		}
@@ -113,19 +118,45 @@ static void read_file()
 	printf("Parse file time: %ld\n", elapsed);
 }
 
-static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_idx, int num_words, int num_skips)
+static void idx_to_word(char *buffer, uint32_t idx)
+{
+	memcpy(buffer, &word_text[idx * WORD_LEN], WORD_LEN);
+	buffer[WORD_LEN] = '\0';
+}
+
+static void idxs_to_solution(char *buffer, uint32_t *words_so_far, int num_words)
+{
+	memset(buffer, 0, num_words * 6 + 1);
+	for (int i = 0; i < num_words; i++) {
+		uint32_t word_idx = words_so_far[i];
+		char *word = &word_text[word_idx * WORD_LEN];
+		memcpy(&buffer[i * 6], word, WORD_LEN);
+		buffer[i * 6 + WORD_LEN] = ' ';
+	}
+	//buffer[num_words * 7] = '\0';
+}
+
+static void idx_to_solution(char *buffer, uint32_t solution, int num_words)
+{
+	memset(buffer, 0, num_words * 6 + 1);
+	for (int i = 0; i < num_words; i++) {
+		uint32_t word_idx = solutions[(solution * MAX_NUM_WORDS) + i];
+		char *word = &word_text[word_idx * WORD_LEN];
+		memcpy(&buffer[i * 6], word, WORD_LEN);
+		buffer[i * 6 + WORD_LEN] = ' ';
+	}
+	//buffer[num_words * 7] = '\0';
+}
+
+static void solve_recursive(uint32_t bits, uint32_t *words_so_far, int letter_idx, int num_words, int num_skips)
 {
 	if (num_skips == 2)
 		return;
 	if (letter_idx == 26)
 		return;
-	if (num_words == WORD_LEN) {
-		for (int i = 0; i < WORD_LEN; i++) {
-			word_ptr *word_ptr = &words_so_far[i];
-			char *solution_offset = &solutions[solution_count * WORD_LEN * WORD_LEN + i * WORD_LEN];
-			char *word = &word_text[word_ptr->letter][word_ptr->submask_bucket][word_ptr->idx * WORD_LEN];
-			memcpy(solution_offset, word, WORD_LEN);
-		}
+	if (num_words == MAX_NUM_WORDS) {
+		uint32_t *solution_offset = &solutions[solution_count * MAX_NUM_WORDS];
+		memcpy(solution_offset, words_so_far, num_words * sizeof(uint32_t));
 		solution_count++;
 		return;
 	}
@@ -134,15 +165,12 @@ static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_id
 		for (int i = 0; i < SUBMASK_BUCKETS; i++) {
 			uint32_t submask = get_submask(i);
 			if (i == SUBMASK_BUCKETS - 1 || (bits & submask) == 0) {
-				for (int j = 0; j < word_counts[letter_idx][i]; j++) {
-					uint32_t word_bitmask = word_bits[letter_idx][i][j];
-					if ((word_bitmask & bits) > 0)
+				for (int j = 0; j < index_counts[letter_idx][i]; j++) {
+					word_info wi = letter_index[letter_idx][i][j];
+					if ((wi.bits & bits) > 0)
 						continue;
-					word_ptr *ptr = &words_so_far[num_words];
-					ptr->letter = letter_idx;
-					ptr->submask_bucket = i;
-					ptr->idx = j;
-					uint32_t new_bits = bits | word_bitmask;
+					words_so_far[num_words] = wi.idx;
+					uint32_t new_bits = bits | wi.bits;
 					solve_recursive(new_bits, words_so_far, letter_idx + 1, num_words + 1, num_skips);
 				}
 			}
@@ -156,9 +184,13 @@ static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_id
 static void solve(int iteration)
 {
 	clock_t start = clock();
-	word_ptr words_so_far[5];
-	memset(words_so_far, 0, sizeof(words_so_far));
+	uint32_t words_so_far[5];
+	memset(words_so_far, 0, sizeof(uint32_t));
 	solve_recursive(0, words_so_far, 0, 0, 0);
+	clock_t elapsed = clock() - start;
+	printf("Solve time: %ld\n", elapsed);
+
+	start = clock();
 	FILE *output;
 	char output_file_name[100];
 	sprintf_s(output_file_name, sizeof(output_file_name), "C:/code/Wordle5x5/Wordle5x5/results_%d.txt", iteration);
@@ -168,24 +200,23 @@ static void solve(int iteration)
 		return;
 	}
 	for (int i = 0; i < solution_count; i++) {
-		for (int j = 0; j < WORD_LEN; j++) {
-			int solution_idx = i * WORD_LEN * WORD_LEN + j * WORD_LEN;
-			fwrite(&solutions[solution_idx], WORD_LEN, 1, output);
-			fwrite(" ", 1, 1, output);
-		}
+		char buffer[MAX_NUM_WORDS * 6 + 1];
+		idx_to_solution(buffer, i, MAX_NUM_WORDS);
+		fwrite(buffer, 1, MAX_NUM_WORDS * 6 - 1, output);
 		fwrite("\n", 1, 1, output);
 	}
 	fclose(output);
-	clock_t elapsed = clock() - start;
-	printf("Solve time: %ld\n", elapsed);
+	elapsed = clock() - start;
+	printf("Write time: %ld\n", elapsed);
 }
 
 int main()
 {
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 1; i++) {
 		setup();
 		read_file();
 		solve(i);
+		printf("\n");
 	}
 	return 0;
 }
