@@ -1,6 +1,9 @@
 #include "allocator.h"
 #include "int_hashset.h"
 
+#include <immintrin.h>
+//#include <avxintrin.h>
+//#include <avx2intrin.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -113,6 +116,13 @@ static void read_file()
 	printf("Parse file time: %ld\n", elapsed);
 }
 
+static char *word_ptr_to_str(word_ptr *ptr, int i)
+{
+	char *solution_offset = &solutions[solution_count * WORD_LEN * WORD_LEN + i * WORD_LEN];
+	char *word = &word_text[ptr->letter][ptr->submask_bucket][ptr->idx * WORD_LEN];
+	return word;
+}
+
 static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_idx, int num_words, int num_skips)
 {
 	if (num_skips == 2)
@@ -121,9 +131,9 @@ static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_id
 		return;
 	if (num_words == WORD_LEN) {
 		for (int i = 0; i < WORD_LEN; i++) {
-			word_ptr *word_ptr = &words_so_far[i];
+			word_ptr *ptr = &words_so_far[i];
 			char *solution_offset = &solutions[solution_count * WORD_LEN * WORD_LEN + i * WORD_LEN];
-			char *word = &word_text[word_ptr->letter][word_ptr->submask_bucket][word_ptr->idx * WORD_LEN];
+			char *word = &word_text[ptr->letter][ptr->submask_bucket][ptr->idx * WORD_LEN];
 			memcpy(solution_offset, word, WORD_LEN);
 		}
 		solution_count++;
@@ -131,10 +141,36 @@ static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_id
 	}
 
 	if ((bits & frequency_alphabet_bits[letter_idx]) == 0) {
+		__m256i bits_vector = _mm256_set1_epi32(bits);
 		for (int i = 0; i < SUBMASK_BUCKETS; i++) {
 			uint32_t submask = get_submask(i);
 			if (i == SUBMASK_BUCKETS - 1 || (bits & submask) == 0) {
-				for (int j = 0; j < word_counts[letter_idx][i]; j++) {
+				int word_list_length = word_counts[letter_idx][i];
+				int remaining = word_list_length % 8;
+				int ors[8];
+				int ands[8];
+				for (int j = 0; j < word_list_length - remaining; j += 8) {
+					__m256i word_bits_vector = _mm256_load_si256(&word_bits[letter_idx][i][j]);
+					__m256i ands_vector = _mm256_and_si256(bits_vector, word_bits_vector);
+					_mm256_store_si256(ands, ands_vector);
+					// don't do this it just makes it slower
+					//__m256i vres = _mm256_cmpgt_epi32(ands_vector, _mm256_setzero_si256());
+					//uint32_t ands = _mm256_movemask_epi8(vres);
+					__m256i ors_vector = _mm256_or_si256(bits_vector, word_bits_vector);
+					_mm256_store_si256(ors, ors_vector);
+					for (int k = 0; k < 8; k++) {
+						//if ((ands & (1 << (k * 4))) > 0)
+						if (ands[k] > 0)
+							continue;
+						word_ptr *ptr = &words_so_far[num_words];
+						ptr->letter = letter_idx;
+						ptr->submask_bucket = i;
+						ptr->idx = j + k;
+						int new_bits = ors[k];
+						solve_recursive(new_bits, words_so_far, letter_idx + 1, num_words + 1, num_skips);
+					}
+				}
+				for (int j = word_list_length - remaining; j < word_list_length; j++) {
 					uint32_t word_bitmask = word_bits[letter_idx][i][j];
 					if ((word_bitmask & bits) > 0)
 						continue;
@@ -145,6 +181,18 @@ static void solve_recursive(uint32_t bits, word_ptr *words_so_far, int letter_id
 					uint32_t new_bits = bits | word_bitmask;
 					solve_recursive(new_bits, words_so_far, letter_idx + 1, num_words + 1, num_skips);
 				}
+
+				/*for (int j = 0; j < word_list_length; j++) {
+					uint32_t word_bitmask = word_bits[letter_idx][i][j];
+					if ((word_bitmask & bits) > 0)
+						continue;
+					word_ptr *ptr = &words_so_far[num_words];
+					ptr->letter = letter_idx;
+					ptr->submask_bucket = i;
+					ptr->idx = j;
+					uint32_t new_bits = bits | word_bitmask;
+					solve_recursive(new_bits, words_so_far, letter_idx + 1, num_words + 1, num_skips);
+				}*/
 			}
 		}
 		solve_recursive(bits, words_so_far, letter_idx + 1, num_words, num_skips + 1);
@@ -182,7 +230,7 @@ static void solve(int iteration)
 
 int main()
 {
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 1; i++) {
 		setup();
 		read_file();
 		solve(i);
