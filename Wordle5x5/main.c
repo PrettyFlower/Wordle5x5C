@@ -1,11 +1,15 @@
 #include "allocator.h"
 #include "int_hashset.h"
 
+#define HAVE_STRUCT_TIMESPEC
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <windows.h>
 
 #define BUFFER_SIZE 4300000
 #define SUBMASK_BUCKETS 6
@@ -17,14 +21,28 @@ typedef struct {
 	uint32_t bits;
 } word_info;
 
+typedef struct {
+	uint32_t idx;
+	uint32_t bits;
+	uint32_t best_letter;
+} thread_word_info;
+
+typedef struct {
+	int thread_num;
+	int num_threads;
+	pthread_t thread_id;
+} parallel_args;
+
 static const char FREQUENCY_ALPHABET[26] = "qxjzvfwbkgpmhdcytlnuroisea";
 static uint32_t frequency_alphabet_bits[26];
 static char word_text[6000 * WORD_LEN];
 static int word_count;
+static thread_word_info thread_words[1000];
+static int thread_word_count;
 static word_info letter_index[26][SUBMASK_BUCKETS][500];
 static int index_counts[26][SUBMASK_BUCKETS];
 static uint32_t solutions[1000 * MAX_NUM_WORDS];
-static int solution_count;
+static atomic_int solution_count;
 
 static void setup()
 {
@@ -34,6 +52,8 @@ static void setup()
 	}
 	memset(word_text, 0, sizeof(word_text));
 	word_count = 0;
+	memset(thread_words, 0, sizeof(thread_words));
+	thread_word_count = 0;
 	memset(letter_index, 0, sizeof(letter_index));
 	memset(index_counts, 0, sizeof(index_counts));
 	memset(solutions, 0, sizeof(solutions));
@@ -107,6 +127,13 @@ static void read_file()
 				wi->idx = word_count;
 				*index_count = *index_count + 1;
 				word_count++;
+				if (best_letter < 2) {
+					thread_word_info *twi = &thread_words[thread_word_count];
+					twi->idx = wi->idx;
+					twi->bits = wi->bits;
+					twi->best_letter = best_letter;
+					thread_word_count++;
+				}
 				break;
 			}
 		}
@@ -133,7 +160,6 @@ static void idxs_to_solution(char *buffer, uint32_t *words_so_far, int num_words
 		memcpy(&buffer[i * 6], word, WORD_LEN);
 		buffer[i * 6 + WORD_LEN] = ' ';
 	}
-	//buffer[num_words * 7] = '\0';
 }
 
 static void idx_to_solution(char *buffer, uint32_t solution, int num_words)
@@ -145,7 +171,6 @@ static void idx_to_solution(char *buffer, uint32_t solution, int num_words)
 		memcpy(&buffer[i * 6], word, WORD_LEN);
 		buffer[i * 6 + WORD_LEN] = ' ';
 	}
-	//buffer[num_words * 7] = '\0';
 }
 
 static void solve_recursive(uint32_t bits, uint32_t *words_so_far, int letter_idx, int num_words, int num_skips)
@@ -155,9 +180,9 @@ static void solve_recursive(uint32_t bits, uint32_t *words_so_far, int letter_id
 	if (letter_idx == 26)
 		return;
 	if (num_words == MAX_NUM_WORDS) {
-		uint32_t *solution_offset = &solutions[solution_count * MAX_NUM_WORDS];
+		int last_solution_count = atomic_fetch_add(&solution_count, 1);
+		uint32_t *solution_offset = &solutions[last_solution_count * MAX_NUM_WORDS];
 		memcpy(solution_offset, words_so_far, num_words * sizeof(uint32_t));
-		solution_count++;
 		return;
 	}
 
@@ -181,12 +206,45 @@ static void solve_recursive(uint32_t bits, uint32_t *words_so_far, int letter_id
 	}
 }
 
+static void *solve_parallel(void *args)
+{
+	parallel_args *p_args = (parallel_args *)args;
+	int thread_words_to_process = thread_word_count / p_args->num_threads;
+	int thread_words_start = thread_words_to_process * p_args->thread_num;
+	if (p_args->thread_num == p_args->num_threads - 1) {
+		thread_words_to_process = thread_word_count - thread_words_start;
+	}
+
+	uint32_t words_so_far[5];
+	memset(words_so_far, 0, sizeof(uint32_t));
+	for (int i = 0; i < thread_words_to_process; i++) {
+		thread_word_info *twi = &thread_words[thread_words_start + i];
+		int letter_idx = twi->best_letter + 1;
+		int num_skips = twi->best_letter;
+		words_so_far[0] = twi->idx;
+		solve_recursive(twi->bits, words_so_far, letter_idx, 1, num_skips);
+	}
+	return NULL;
+}
+
 static void solve(int iteration)
 {
 	clock_t start = clock();
-	uint32_t words_so_far[5];
-	memset(words_so_far, 0, sizeof(uint32_t));
-	solve_recursive(0, words_so_far, 0, 0, 0);
+
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	int num_cpu = sysinfo.dwNumberOfProcessors;
+	//int num_cpu = 1;
+	parallel_args thread_info[20];
+	for (int i = 0; i < num_cpu; i++) {
+		parallel_args *p_args = &thread_info[i];
+		p_args->thread_num = i;
+		p_args->num_threads = num_cpu;
+		pthread_create(&p_args->thread_id, NULL, solve_parallel, p_args);
+	}
+	for (int i = 0; i < num_cpu; i++) {
+		pthread_join(thread_info[i].thread_id, NULL);
+	}
 	clock_t elapsed = clock() - start;
 	printf("Solve time: %ld\n", elapsed);
 
