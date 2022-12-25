@@ -212,10 +212,13 @@ static void solve(int iteration)
 
 int main()
 {
-	for (int i = 0; i < 1; i++) {
+	for (int i = 0; i < 10; i++) {
+		clock_t start = clock();
 		setup();
 		read_file();
 		solve(i);
+		clock_t elapsed = clock() - start;
+		printf("Total time: %ld\n", elapsed);
 		printf("\n");
 	}
 	return 0;
