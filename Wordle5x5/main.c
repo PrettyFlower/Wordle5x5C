@@ -58,7 +58,7 @@ static void setup()
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
 	num_cpu = sysinfo.dwNumberOfProcessors;
-	num_cpu = 2;
+	//num_cpu = 2;
 	for (int i = 0; i < 26; i++)
 	{
 		frequency_alphabet_bits[i] = 1 << (FREQUENCY_ALPHABET[i] - 97);
