@@ -1,5 +1,7 @@
 #include "allocator.h"
 
+#include <stdio.h>
+
 allocator *core_allocator_init(int id, int size)
 {
 	int alloc_block_size = core_alloc_block_align_size(sizeof(alloc_block));

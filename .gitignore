@@ -2,3 +2,5 @@
 x64/
 results_*
 packages/
+*.o
+Wordle5x5/wordle5x5c
