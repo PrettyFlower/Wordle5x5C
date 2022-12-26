@@ -25,13 +25,13 @@ typedef struct {
 typedef struct {
 	uint32_t idx;
 	uint32_t bits;
-} word_info;
+	uint32_t best_letter;
+} full_word_info;
 
 typedef struct {
 	uint32_t idx;
 	uint32_t bits;
-	uint32_t best_letter;
-} thread_word_info;
+} word_info;
 
 typedef struct {
 	int thread_num;
@@ -45,11 +45,14 @@ static size_t file_bytes_length;
 static const char FREQUENCY_ALPHABET[26] = "qxjzvfwbkgpmhdcytlnuroisea";
 static uint32_t frequency_alphabet_bits[26];
 static char word_text[11000 * WORD_LEN];
+static full_word_info word_infos[11000 * WORD_LEN];
 static atomic_int word_count;
-static thread_word_info thread_words[1000];
-static atomic_int thread_word_count;
+
+static full_word_info thread_words[1000];
+static int thread_word_count;
 static word_info letter_index[26][SUBMASK_BUCKETS][1000];
-static atomic_int index_counts[26][SUBMASK_BUCKETS];
+static int index_counts[26][SUBMASK_BUCKETS];
+
 static uint32_t solutions[1000 * MAX_NUM_WORDS];
 static atomic_int solution_count;
 
@@ -58,7 +61,7 @@ static void setup()
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
 	num_cpu = sysinfo.dwNumberOfProcessors;
-	//num_cpu = 2;
+	//num_cpu = 1;
 	for (int i = 0; i < 26; i++)
 	{
 		frequency_alphabet_bits[i] = 1 << (FREQUENCY_ALPHABET[i] - 97);
@@ -117,8 +120,6 @@ static void *parse_parallel(void *args)
 		file_idx++;
 	}
 
-	//allocator *alloc = core_allocator_init(1, 400000);
-	//int_hashset *word_hashes = core_int_hashset_init(alloc, 39009);
 	while (file_idx < end_idx) {
 		int line_idx = 0;
 		do {
@@ -137,30 +138,15 @@ static void *parse_parallel(void *args)
 		int is_valid = str_to_bits(buffer, &bits, &best_letter);
 		if (!is_valid)
 			continue;
-		//int added = core_int_hashset_add(word_hashes, bits);
-		//if (!added)
-			//continue;
-		for (int i = 0; i < SUBMASK_BUCKETS; i++) {
-			uint32_t submask = get_submask(i);
-			if (i == SUBMASK_BUCKETS - 1 || (bits & submask) > 0) {
-				int last_word_count = atomic_fetch_add(&word_count, 1);
-				memcpy(&word_text[last_word_count * WORD_LEN], buffer, WORD_LEN);
-				int last_index_count = atomic_fetch_add(&index_counts[best_letter][i], 1);
-				word_info *wi = &letter_index[best_letter][i][last_index_count];
-				wi->bits = bits;
-				wi->idx = last_word_count;
-				if (best_letter < 2) {
-					int last_thread_word_count = atomic_fetch_add(&thread_word_count, 1);
-					thread_word_info *twi = &thread_words[last_thread_word_count];
-					twi->idx = wi->idx;
-					twi->bits = wi->bits;
-					twi->best_letter = best_letter;
-				}
-				break;
-			}
-		}
+
+		int last_word_count = atomic_fetch_add(&word_count, 1);
+		memcpy(&word_text[last_word_count * WORD_LEN], buffer, WORD_LEN);
+		full_word_info *wi = &word_infos[last_word_count];
+		wi->bits = bits;
+		wi->idx = last_word_count;
+		wi->best_letter = best_letter;
 	}
-	//core_allocator_free_all(alloc);
+	
 	return NULL;
 }
 
@@ -186,9 +172,37 @@ static void read_file()
 	for (int i = 0; i < num_cpu; i++) {
 		pthread_join(thread_info[i].thread_id, NULL);
 	}
-
 	elapsed = clock() - start;
 	printf("Parse file time: %ld\n", elapsed);
+
+	start = clock();
+	allocator *alloc = core_allocator_init(1, 400000);
+	int_hashset *word_hashes = core_int_hashset_init(alloc, 39009);
+	for (int i = 0; i < word_count; i++) {
+		full_word_info fwi = word_infos[i];
+		int added = core_int_hashset_add(word_hashes, fwi.bits);
+		if (!added)
+			continue;
+		for (int j = 0; j < SUBMASK_BUCKETS; j++) {
+			uint32_t submask = get_submask(j);
+			if (j == SUBMASK_BUCKETS - 1 || (fwi.bits & submask) > 0) {
+				int *index_count = &index_counts[fwi.best_letter][j];
+				word_info *wi = &letter_index[fwi.best_letter][j][*index_count];
+				wi->idx = fwi.idx;
+				wi->bits = fwi.bits;
+				*index_count = *index_count + 1;
+
+				if (fwi.best_letter < 2) {
+					thread_words[thread_word_count] = fwi;
+					thread_word_count++;
+				}
+				break;
+			}
+		}
+	}
+	core_allocator_free_all(alloc);
+	elapsed = clock() - start;
+	printf("Index file time: %ld\n", elapsed);
 }
 
 static void idx_to_word(char *buffer, uint32_t idx)
@@ -264,11 +278,11 @@ static void *solve_parallel(void *args)
 	uint32_t words_so_far[5];
 	memset(words_so_far, 0, sizeof(uint32_t));
 	for (int i = 0; i < thread_words_to_process; i++) {
-		thread_word_info *twi = &thread_words[thread_words_start + i];
-		int letter_idx = twi->best_letter + 1;
-		int num_skips = twi->best_letter;
-		words_so_far[0] = twi->idx;
-		solve_recursive(twi->bits, words_so_far, letter_idx, 1, num_skips);
+		full_word_info *fwi = &thread_words[thread_words_start + i];
+		int letter_idx = fwi->best_letter + 1;
+		int num_skips = fwi->best_letter;
+		words_so_far[0] = fwi->idx;
+		solve_recursive(fwi->bits, words_so_far, letter_idx, 1, num_skips);
 	}
 	return NULL;
 }
