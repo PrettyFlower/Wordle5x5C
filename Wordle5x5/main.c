@@ -177,7 +177,7 @@ static void read_file()
 	clock_t start = clock();
 	memset(file_bytes, 0, BUFFER_SIZE);
 	FILE *fp = fopen(INPUT_FILE, "rb");
-	file_bytes_length = fread_s(file_bytes, BUFFER_SIZE, 1, BUFFER_SIZE, fp);
+	file_bytes_length = fread(file_bytes, BUFFER_SIZE, 1, fp);
 	fclose(fp);
 	clock_t elapsed = clock() - start;
 	printf("Read file time: %ld\n", elapsed);
