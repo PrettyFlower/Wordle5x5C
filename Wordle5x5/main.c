@@ -17,6 +17,12 @@
 #define WORD_LEN 5
 
 typedef struct {
+	int thread_num;
+	int num_threads;
+	pthread_t thread_id;
+} parallel_parse_args;
+
+typedef struct {
 	uint32_t idx;
 	uint32_t bits;
 } word_info;
@@ -31,21 +37,28 @@ typedef struct {
 	int thread_num;
 	int num_threads;
 	pthread_t thread_id;
-} parallel_args;
+} parallel_solve_args;
 
+static int num_cpu;
+static char file_bytes[BUFFER_SIZE];
+static size_t file_bytes_length;
 static const char FREQUENCY_ALPHABET[26] = "qxjzvfwbkgpmhdcytlnuroisea";
 static uint32_t frequency_alphabet_bits[26];
-static char word_text[6000 * WORD_LEN];
-static int word_count;
+static char word_text[11000 * WORD_LEN];
+static atomic_int word_count;
 static thread_word_info thread_words[1000];
-static int thread_word_count;
-static word_info letter_index[26][SUBMASK_BUCKETS][500];
-static int index_counts[26][SUBMASK_BUCKETS];
+static atomic_int thread_word_count;
+static word_info letter_index[26][SUBMASK_BUCKETS][1000];
+static atomic_int index_counts[26][SUBMASK_BUCKETS];
 static uint32_t solutions[1000 * MAX_NUM_WORDS];
 static atomic_int solution_count;
 
 static void setup()
 {
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	num_cpu = sysinfo.dwNumberOfProcessors;
+	num_cpu = 2;
 	for (int i = 0; i < 26; i++)
 	{
 		frequency_alphabet_bits[i] = 1 << (FREQUENCY_ALPHABET[i] - 97);
@@ -84,21 +97,29 @@ static int str_to_bits(char *str, uint32_t *bits, uint32_t *best_letter)
 	return 1;
 }
 
-static void read_file()
+static void *parse_parallel(void *args)
 {
-	clock_t start = clock();
-	FILE *fp;
-	fopen_s(&fp, "C:/code/Wordle5x5/Wordle5x5/words_alpha.txt", "rb");
-	char *file_bytes = calloc(1, BUFFER_SIZE);
-	size_t num_file_bytes = fread_s(file_bytes, BUFFER_SIZE, 1, BUFFER_SIZE, fp);
-	fclose(fp);
+	parallel_parse_args *p_args = (parallel_parse_args *)args;
+	int bytes_to_process = file_bytes_length / p_args->num_threads;
+	int file_idx = bytes_to_process * p_args->thread_num;
+	if (p_args->thread_num == p_args->num_threads - 1) {
+		bytes_to_process = file_bytes_length - file_idx;
+	}
+	int end_idx = file_idx + bytes_to_process;
 
 	char buffer[5];
-	int file_idx = 0;
 	char c = file_bytes[file_idx];
-	allocator *alloc = core_allocator_init(1, 400000);
-	int_hashset *word_hashes = core_int_hashset_init(alloc, 39009);
-	while (file_idx < num_file_bytes) {
+	if (p_args->thread_num > 0) {
+		while (c != '\n') {
+			file_idx--;
+			c = file_bytes[file_idx];
+		}
+		file_idx++;
+	}
+
+	//allocator *alloc = core_allocator_init(1, 400000);
+	//int_hashset *word_hashes = core_int_hashset_init(alloc, 39009);
+	while (file_idx < end_idx) {
 		int line_idx = 0;
 		do {
 			c = file_bytes[file_idx + line_idx];
@@ -107,6 +128,8 @@ static void read_file()
 			line_idx++;
 		} while (c != '\n');
 		file_idx += line_idx;
+		if (file_idx > end_idx)
+			break;
 		if (line_idx != 7)
 			continue;
 
@@ -114,34 +137,57 @@ static void read_file()
 		int is_valid = str_to_bits(buffer, &bits, &best_letter);
 		if (!is_valid)
 			continue;
-		int added = core_int_hashset_add(word_hashes, bits);
-		if(!added)
-			continue;
+		//int added = core_int_hashset_add(word_hashes, bits);
+		//if (!added)
+			//continue;
 		for (int i = 0; i < SUBMASK_BUCKETS; i++) {
 			uint32_t submask = get_submask(i);
 			if (i == SUBMASK_BUCKETS - 1 || (bits & submask) > 0) {
-				memcpy(&word_text[word_count * WORD_LEN], buffer, WORD_LEN);
-				int *index_count = &index_counts[best_letter][i];
-				word_info *wi = &letter_index[best_letter][i][*index_count];
+				int last_word_count = atomic_fetch_add(&word_count, 1);
+				memcpy(&word_text[last_word_count * WORD_LEN], buffer, WORD_LEN);
+				int last_index_count = atomic_fetch_add(&index_counts[best_letter][i], 1);
+				word_info *wi = &letter_index[best_letter][i][last_index_count];
 				wi->bits = bits;
-				wi->idx = word_count;
-				*index_count = *index_count + 1;
-				word_count++;
+				wi->idx = last_word_count;
 				if (best_letter < 2) {
-					thread_word_info *twi = &thread_words[thread_word_count];
+					int last_thread_word_count = atomic_fetch_add(&thread_word_count, 1);
+					thread_word_info *twi = &thread_words[last_thread_word_count];
 					twi->idx = wi->idx;
 					twi->bits = wi->bits;
 					twi->best_letter = best_letter;
-					thread_word_count++;
 				}
 				break;
 			}
 		}
 	}
-	free(file_bytes);
-	core_allocator_free_all(alloc);
+	//core_allocator_free_all(alloc);
+	return NULL;
+}
 
+static void read_file()
+{
+	clock_t start = clock();
+	memset(file_bytes, 0, BUFFER_SIZE);
+	FILE *fp;
+	fopen_s(&fp, "C:/code/Wordle5x5/Wordle5x5/words_alpha.txt", "rb");
+	file_bytes_length = fread_s(file_bytes, BUFFER_SIZE, 1, BUFFER_SIZE, fp);
+	fclose(fp);
 	clock_t elapsed = clock() - start;
+	printf("Read file time: %ld\n", elapsed);
+
+	start = clock();
+	parallel_parse_args thread_info[20];
+	for (int i = 0; i < num_cpu; i++) {
+		parallel_parse_args *p_args = &thread_info[i];
+		p_args->thread_num = i;
+		p_args->num_threads = num_cpu;
+		pthread_create(&p_args->thread_id, NULL, parse_parallel, p_args);
+	}
+	for (int i = 0; i < num_cpu; i++) {
+		pthread_join(thread_info[i].thread_id, NULL);
+	}
+
+	elapsed = clock() - start;
 	printf("Parse file time: %ld\n", elapsed);
 }
 
@@ -208,7 +254,7 @@ static void solve_recursive(uint32_t bits, uint32_t *words_so_far, int letter_id
 
 static void *solve_parallel(void *args)
 {
-	parallel_args *p_args = (parallel_args *)args;
+	parallel_solve_args *p_args = (parallel_solve_args *)args;
 	int thread_words_to_process = thread_word_count / p_args->num_threads;
 	int thread_words_start = thread_words_to_process * p_args->thread_num;
 	if (p_args->thread_num == p_args->num_threads - 1) {
@@ -230,14 +276,9 @@ static void *solve_parallel(void *args)
 static void solve(int iteration)
 {
 	clock_t start = clock();
-
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	int num_cpu = sysinfo.dwNumberOfProcessors;
-	//int num_cpu = 1;
-	parallel_args thread_info[20];
+	parallel_solve_args thread_info[20];
 	for (int i = 0; i < num_cpu; i++) {
-		parallel_args *p_args = &thread_info[i];
+		parallel_solve_args *p_args = &thread_info[i];
 		p_args->thread_num = i;
 		p_args->num_threads = num_cpu;
 		pthread_create(&p_args->thread_id, NULL, solve_parallel, p_args);
@@ -270,7 +311,7 @@ static void solve(int iteration)
 
 int main()
 {
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 1; i++) {
 		clock_t start = clock();
 		setup();
 		read_file();
