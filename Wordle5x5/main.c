@@ -9,7 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
 #include <windows.h>
+#elif __linux__
+#include <unistd.h>
+#endif
 
 #define BUFFER_SIZE 4300000
 #define SUBMASK_BUCKETS 6
@@ -43,6 +47,17 @@ static word_info letter_index[26][SUBMASK_BUCKETS][500];
 static int index_counts[26][SUBMASK_BUCKETS];
 static uint32_t solutions[1000 * MAX_NUM_WORDS];
 static atomic_int solution_count;
+
+static int get_num_cpu()
+{
+#ifdef _WIN32
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	return sysinfo.dwNumberOfProcessors;
+#elif __linux__
+	return sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+}
 
 static void setup()
 {
@@ -230,10 +245,7 @@ static void *solve_parallel(void *args)
 static void solve(int iteration)
 {
 	clock_t start = clock();
-
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	int num_cpu = sysinfo.dwNumberOfProcessors;
+	int num_cpu = get_num_cpu();
 	//int num_cpu = 1;
 	parallel_args thread_info[20];
 	for (int i = 0; i < num_cpu; i++) {
@@ -270,7 +282,7 @@ static void solve(int iteration)
 
 int main()
 {
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 1; i++) {
 		clock_t start = clock();
 		setup();
 		read_file();
