@@ -11,6 +11,15 @@
 #define SUBMASK_BUCKETS 6
 #define MAX_NUM_WORDS 5
 #define WORD_LEN 5
+#ifdef _WIN32
+#define LINE_LENGTH 7 // line ends with \r\n
+#define INPUT_FILE "C:/code/Wordle5x5C/Wordle5x5/words_alpha.txt"
+#define OUTPUT_FILE "C:/code/Wordle5x5C/Wordle5x5/results_%d.txt"
+#else
+#define LINE_LENGTH 6 line ends with \n
+#define INPUT_FILE "/home/gordon/code/Wordle5x5C/Wordle5x5/words_alpha.txt"
+#define OUTPUT_FILE "/home/gordon/code/Wordle5x5C/Wordle5x5/results_%d.txt"
+#endif
 
 typedef struct {
 	uint32_t idx;
@@ -67,7 +76,7 @@ static int str_to_bits(char *str, uint32_t *bits, uint32_t *best_letter)
 static void read_file()
 {
 	clock_t start = clock();
-	FILE *fp = fopen("/home/gordon/code/Wordle5x5C/Wordle5x5/words_alpha.txt", "rb");
+	FILE *fp = fopen(INPUT_FILE, "rb");
 	char *file_bytes = calloc(1, BUFFER_SIZE);
 	size_t num_file_bytes = fread(file_bytes, 1, BUFFER_SIZE, fp);
 	fclose(fp);
@@ -86,7 +95,7 @@ static void read_file()
 			line_idx++;
 		} while (c != '\n');
 		file_idx += line_idx;
-		if (line_idx != 6)
+		if (line_idx != LINE_LENGTH)
 			continue;
 
 		uint32_t bits, best_letter;
@@ -191,7 +200,7 @@ static void solve(int iteration)
 
 	start = clock();
 	char output_file_name[100];
-	sprintf(output_file_name, "/home/gordon/code/Wordle5x5C/Wordle5x5/results_%d.txt", iteration);
+	sprintf(output_file_name, OUTPUT_FILE, iteration);
 	FILE *output = fopen(output_file_name, "wb");
 	/*if (err != 0) {
 		printf("Error opening file for writing: %d, %ld\n", err, _doserrno);
