@@ -1,0 +1,11 @@
+// debug
+gcc -c allocation_block.c allocator.c int_hashset.c main.c prime_utils.c -g
+
+// release
+gcc -c allocation_block.c allocator.c int_hashset.c main.c prime_utils.c -O3
+
+// link
+gcc allocation_block.o allocator.o int_hashset.o main.o prime_utils.o -o wordle5x5c -lm
+
+// benchmark
+hyperfine --warmup 3 ./wordle5x5c

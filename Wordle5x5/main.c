@@ -9,12 +9,25 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
 #include <windows.h>
+#elif __linux__
+#include <unistd.h>
+#endif
 
 #define BUFFER_SIZE 4300000
 #define SUBMASK_BUCKETS 6
 #define MAX_NUM_WORDS 5
 #define WORD_LEN 5
+#ifdef _WIN32
+#define LINE_LENGTH 7 // line ends with \r\n
+#define INPUT_FILE "C:/code/Wordle5x5C/Wordle5x5/words_alpha.txt"
+#define OUTPUT_FILE "C:/code/Wordle5x5C/Wordle5x5/results_%d.txt"
+#else
+#define LINE_LENGTH 6 // line ends with \n
+#define INPUT_FILE "/home/gordon/code/Wordle5x5C/Wordle5x5/words_alpha.txt"
+#define OUTPUT_FILE "/home/gordon/code/Wordle5x5C/Wordle5x5/results_%d.txt"
+#endif
 
 typedef struct {
 	int thread_num;
@@ -56,11 +69,20 @@ static int index_counts[26][SUBMASK_BUCKETS];
 static uint32_t solutions[1000 * MAX_NUM_WORDS];
 static atomic_int solution_count;
 
-static void setup()
+static int get_num_cpu()
 {
+#ifdef _WIN32
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
-	num_cpu = sysinfo.dwNumberOfProcessors;
+	return sysinfo.dwNumberOfProcessors;
+#elif __linux__
+	return sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+}
+
+static void setup()
+{
+	num_cpu = get_num_cpu();
 	//num_cpu = 1;
 	for (int i = 0; i < 26; i++)
 	{
@@ -131,7 +153,7 @@ static void *parse_parallel(void *args)
 		file_idx += line_idx;
 		if (file_idx > end_idx)
 			break;
-		if (line_idx != 7)
+		if (line_idx != LINE_LENGTH)
 			continue;
 
 		uint32_t bits, best_letter;
@@ -154,8 +176,7 @@ static void read_file()
 {
 	clock_t start = clock();
 	memset(file_bytes, 0, BUFFER_SIZE);
-	FILE *fp;
-	fopen_s(&fp, "C:/code/Wordle5x5/Wordle5x5/words_alpha.txt", "rb");
+	FILE *fp = fopen(INPUT_FILE, "rb");
 	file_bytes_length = fread_s(file_bytes, BUFFER_SIZE, 1, BUFFER_SIZE, fp);
 	fclose(fp);
 	clock_t elapsed = clock() - start;
@@ -304,14 +325,13 @@ static void solve(int iteration)
 	printf("Solve time: %ld\n", elapsed);
 
 	start = clock();
-	FILE *output;
 	char output_file_name[100];
-	sprintf_s(output_file_name, sizeof(output_file_name), "C:/code/Wordle5x5/Wordle5x5/results_%d.txt", iteration);
-	errno_t err = fopen_s(&output, output_file_name, "wb");
-	if (err != 0) {
+	sprintf(output_file_name, OUTPUT_FILE, iteration);
+	FILE *output = fopen(output_file_name, "wb");
+	/*if (err != 0) {
 		printf("Error opening file for writing: %d, %ld\n", err, _doserrno);
 		return;
-	}
+	}*/
 	for (int i = 0; i < solution_count; i++) {
 		char buffer[MAX_NUM_WORDS * 6 + 1];
 		idx_to_solution(buffer, i, MAX_NUM_WORDS);
