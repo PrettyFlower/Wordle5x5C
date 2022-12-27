@@ -17,8 +17,8 @@
 #define OUTPUT_FILE "C:/code/Wordle5x5C/Wordle5x5/results_%d.txt"
 #else
 #define LINE_LENGTH 6 // line ends with \n
-#define INPUT_FILE "/home/gordon/code/Wordle5x5C/Wordle5x5/words_alpha.txt"
-#define OUTPUT_FILE "/home/gordon/code/Wordle5x5C/Wordle5x5/results_%d.txt"
+#define INPUT_FILE "/home/prettyflower/code/Wordle5x5C/Wordle5x5/words_alpha.txt"
+#define OUTPUT_FILE "/home/prettyflower/code/Wordle5x5C/Wordle5x5/results_%d.txt"
 #endif
 
 typedef struct {
