@@ -194,7 +194,7 @@ static void read_file()
 		pthread_join(thread_info[i].thread_id, NULL);
 	}
 	elapsed = clock() - start;
-	printf("Parse file time: %ld\n", elapsed);
+	printf("Parse file time: %ld, num words: %d\n", elapsed, word_count);
 
 	start = clock();
 	allocator *alloc = core_allocator_init(1, 400000);
@@ -221,9 +221,10 @@ static void read_file()
 			}
 		}
 	}
+	int num_unique_words = word_hashes->length;
 	core_allocator_free_all(alloc);
 	elapsed = clock() - start;
-	printf("Index file time: %ld\n", elapsed);
+	printf("Index file time: %ld, num unique words: %d\n", elapsed, num_unique_words);
 }
 
 static void idx_to_word(char *buffer, uint32_t idx)
@@ -351,7 +352,7 @@ int main()
 		read_file();
 		solve(i);
 		clock_t elapsed = clock() - start;
-		printf("Total time: %ld\n", elapsed);
+		printf("Total time: %ld, num solutions: %d\n", elapsed, solution_count);
 		printf("\n");
 	}
 	return 0;
