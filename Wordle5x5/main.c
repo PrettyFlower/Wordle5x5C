@@ -123,7 +123,7 @@ static void read_file()
 	core_allocator_free_all(alloc);
 
 	clock_t elapsed = clock() - start;
-	printf("Parse file time: %ld\n", elapsed);
+	printf("Parse file time: %ld, num words: %d\n", elapsed, word_count);
 }
 
 static void idx_to_word(char *buffer, uint32_t idx)
@@ -225,7 +225,7 @@ int main()
 		read_file();
 		solve(i);
 		clock_t elapsed = clock() - start;
-		printf("Total time: %ld\n", elapsed);
+		printf("Total time: %ld, num solutions: %d\n", elapsed, solution_count);
 		printf("\n");
 	}
 	return 0;
