@@ -13,9 +13,11 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#include <sys/stat.h>
 #endif
 
 #define BUFFER_SIZE 4300000
+#define FILE_CHUNK_SIZE 4096
 #define SUBMASK_BUCKETS 6
 #define MAX_NUM_WORDS 5
 #define WORD_LEN 5
@@ -123,10 +125,10 @@ static int str_to_bits(char *str, uint32_t *bits, uint32_t *best_letter)
 
 static char read_next_char(FILE *fp, char *file_buffer, int *file_buffer_start, int file_idx)
 {
-	if (file_idx < *file_buffer_start + 1024)
+	if (file_idx < *file_buffer_start + FILE_CHUNK_SIZE)
 		return file_buffer[file_idx - *file_buffer_start];
-	fread(file_buffer, 1, 1024, fp);
-	*file_buffer_start = *file_buffer_start + 1024;
+	fread(file_buffer, 1, FILE_CHUNK_SIZE, fp);
+	*file_buffer_start = *file_buffer_start + FILE_CHUNK_SIZE;
 	return file_buffer[file_idx - *file_buffer_start];
 }
 
@@ -142,9 +144,9 @@ static void *parse_parallel(void *args)
 
 	FILE *fp = fopen(INPUT_FILE, "rb");
 	fseek(fp, file_idx, 0);
-	char file_buffer[1024];
+	char file_buffer[FILE_CHUNK_SIZE];
 	int file_buffer_start = file_idx;
-	fread(file_buffer, 1, 1024, fp);
+	fread(file_buffer, 1, FILE_CHUNK_SIZE, fp);
 	char line_buffer[5];
 	char c = file_buffer[file_idx - file_buffer_start];
 	if (p_args->thread_num > 0) {
@@ -189,6 +191,7 @@ static void *parse_parallel(void *args)
 static void read_file()
 {
 	clock_t start = clock();
+#ifdef _WIN32
 	size_t converted_chars;
 	wchar_t wide_input_file[100];
 	mbstowcs_s(&converted_chars, wide_input_file, strlen(INPUT_FILE) + 1, INPUT_FILE, 100);
@@ -197,6 +200,11 @@ static void read_file()
 	GetFileSizeEx(file, &file_size);
 	CloseHandle(file);
 	file_bytes_length = file_size.QuadPart;
+#else
+	struct stat st;
+	stat(INPUT_FILE, &st);
+	file_bytes_length = st.st_size;
+#endif
 	clock_t elapsed = clock() - start;
 	printf("Read file time: %ld\n", elapsed);
 
