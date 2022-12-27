@@ -53,7 +53,6 @@ typedef struct {
 } parallel_solve_args;
 
 static int num_cpu;
-static char file_bytes[BUFFER_SIZE];
 static size_t file_bytes_length;
 static const char FREQUENCY_ALPHABET[26] = "qxjzvfwbkgpmhdcytlnuroisea";
 static uint32_t frequency_alphabet_bits[26];
@@ -122,6 +121,15 @@ static int str_to_bits(char *str, uint32_t *bits, uint32_t *best_letter)
 	return 1;
 }
 
+static char read_next_char(FILE *fp, char *file_buffer, int *file_buffer_start, int file_idx)
+{
+	if (file_idx < *file_buffer_start + 1024)
+		return file_buffer[file_idx - *file_buffer_start];
+	fread(file_buffer, 1, 1024, fp);
+	*file_buffer_start = *file_buffer_start + 1024;
+	return file_buffer[file_idx - *file_buffer_start];
+}
+
 static void *parse_parallel(void *args)
 {
 	parallel_parse_args *p_args = (parallel_parse_args *)args;
@@ -132,12 +140,17 @@ static void *parse_parallel(void *args)
 	}
 	int end_idx = file_idx + bytes_to_process;
 
-	char buffer[5];
-	char c = file_bytes[file_idx];
+	FILE *fp = fopen(INPUT_FILE, "rb");
+	fseek(fp, file_idx, 0);
+	char file_buffer[1024];
+	int file_buffer_start = file_idx;
+	fread(file_buffer, 1, 1024, fp);
+	char line_buffer[5];
+	char c = file_buffer[file_idx - file_buffer_start];
 	if (p_args->thread_num > 0) {
 		while (c != '\n') {
-			file_idx--;
-			c = file_bytes[file_idx];
+			file_idx++;
+			c = file_buffer[file_idx - file_buffer_start];
 		}
 		file_idx++;
 	}
@@ -145,9 +158,9 @@ static void *parse_parallel(void *args)
 	while (file_idx < end_idx) {
 		int line_idx = 0;
 		do {
-			c = file_bytes[file_idx + line_idx];
+			c = read_next_char(fp, file_buffer, &file_buffer_start, file_idx + line_idx);
 			if (line_idx < 5)
-				buffer[line_idx] = c;
+				line_buffer[line_idx] = c;
 			line_idx++;
 		} while (c != '\n');
 		file_idx += line_idx;
@@ -157,17 +170,18 @@ static void *parse_parallel(void *args)
 			continue;
 
 		uint32_t bits, best_letter;
-		int is_valid = str_to_bits(buffer, &bits, &best_letter);
+		int is_valid = str_to_bits(line_buffer, &bits, &best_letter);
 		if (!is_valid)
 			continue;
 
 		int last_word_count = atomic_fetch_add(&word_count, 1);
-		memcpy(&word_text[last_word_count * WORD_LEN], buffer, WORD_LEN);
+		memcpy(&word_text[last_word_count * WORD_LEN], line_buffer, WORD_LEN);
 		full_word_info *wi = &word_infos[last_word_count];
 		wi->bits = bits;
 		wi->idx = last_word_count;
 		wi->best_letter = best_letter;
 	}
+	fclose(fp);
 	
 	return NULL;
 }
@@ -175,10 +189,14 @@ static void *parse_parallel(void *args)
 static void read_file()
 {
 	clock_t start = clock();
-	memset(file_bytes, 0, BUFFER_SIZE);
-	FILE *fp = fopen(INPUT_FILE, "rb");
-	file_bytes_length = fread(file_bytes, 1, BUFFER_SIZE, fp);
-	fclose(fp);
+	size_t converted_chars;
+	wchar_t wide_input_file[100];
+	mbstowcs_s(&converted_chars, wide_input_file, strlen(INPUT_FILE) + 1, INPUT_FILE, 100);
+	HANDLE file = CreateFile(wide_input_file, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+	LARGE_INTEGER file_size;
+	GetFileSizeEx(file, &file_size);
+	CloseHandle(file);
+	file_bytes_length = file_size.QuadPart;
 	clock_t elapsed = clock() - start;
 	printf("Read file time: %ld\n", elapsed);
 
